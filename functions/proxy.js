@@ -31,7 +31,17 @@ exports.handler = async (event, context) => {
       if (urlMatch) {
         targetPath = '/xhttp' + (urlMatch[1] || '');
       }
+    } else if (event.path && event.path.includes('/xhttp')) {
+      // Fallback: extract from event.path if rawUrl is not available
+      const pathMatch = event.path.match(/\/xhttp(.*)/);
+      if (pathMatch) {
+        targetPath = '/xhttp' + (pathMatch[1] || '');
+      }
     }
+    
+    console.log('Original path:', originalPath);
+    console.log('Target path:', targetPath);
+    console.log('Raw URL:', event.rawUrl);
     
     // Build the full target URL
     const targetUrl = `${TARGET_SERVER}${targetPath}${queryString ? '?' + queryString : ''}`;
@@ -78,10 +88,15 @@ exports.handler = async (event, context) => {
       // Netlify functions have a 10-second timeout on free tier, 26s on Pro
       // Set a slightly lower timeout to allow for response processing
       signal: AbortSignal.timeout(25000),
+      // Follow redirects automatically
+      redirect: 'follow',
+      // Don't reject on non-2xx responses (let V2Ray handle errors)
+      // This is default behavior for fetch, but being explicit
     };
     
-    // Add body for POST, PUT, PATCH requests
-    if (event.body && ['POST', 'PUT', 'PATCH'].includes(event.httpMethod)) {
+    // Add body for requests that have one
+    // xhttp may use various HTTP methods with bodies
+    if (event.body) {
       if (event.isBase64Encoded) {
         fetchOptions.body = Buffer.from(event.body, 'base64');
       } else {
