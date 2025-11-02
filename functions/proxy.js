@@ -36,25 +36,18 @@ exports.handler = async (event, context) => {
     // Build the full target URL
     const targetUrl = `${TARGET_SERVER}${targetPath}${queryString ? '?' + queryString : ''}`;
     
-    console.log(`Proxying ${event.httpMethod} request to: ${targetUrl}`);
-    
     // Prepare headers to forward
     const forwardHeaders = {};
     
     // Copy relevant headers from the incoming request
+    // Note: Exclude WebSocket headers as Netlify Functions don't support WebSocket upgrades
+    // xhttp uses regular HTTP/HTTPS, not WebSockets
     const headersToForward = [
       'accept',
-      'accept-encoding',
       'accept-language',
       'cache-control',
       'content-type',
       'user-agent',
-      'sec-websocket-key',
-      'sec-websocket-version',
-      'sec-websocket-protocol',
-      'sec-websocket-extensions',
-      'upgrade',
-      'connection',
       'x-forwarded-for',
       'x-forwarded-proto',
       'x-real-ip'
@@ -69,13 +62,22 @@ exports.handler = async (event, context) => {
       });
     }
     
+    // Remove accept-encoding to avoid compression issues with binary data
+    delete forwardHeaders['accept-encoding'];
+    
     // Set Host header to target server
     forwardHeaders['Host'] = 'ad.sdupdates.news';
+    
+    console.log(`Proxying ${event.httpMethod} request to: ${targetUrl}`);
+    console.log('Request headers:', JSON.stringify(forwardHeaders, null, 2));
     
     // Prepare fetch options
     const fetchOptions = {
       method: event.httpMethod,
       headers: forwardHeaders,
+      // Netlify functions have a 10-second timeout on free tier, 26s on Pro
+      // Set a slightly lower timeout to allow for response processing
+      signal: AbortSignal.timeout(25000),
     };
     
     // Add body for POST, PUT, PATCH requests
@@ -104,6 +106,8 @@ exports.handler = async (event, context) => {
     });
     
     console.log(`Response status: ${response.status}`);
+    console.log('Response headers:', JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2));
+    console.log('Response body size:', responseBuffer.length);
     
     // Return the proxied response
     return {
