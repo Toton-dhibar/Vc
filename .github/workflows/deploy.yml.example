@@ -1,0 +1,86 @@
+# GitHub Actions workflow for automatic Netlify deployment
+# 
+# To use this workflow:
+# 1. Rename this file to 'deploy.yml' (remove .example)
+# 2. Get your Netlify tokens from https://app.netlify.com/user/applications
+# 3. Add these secrets to your GitHub repository:
+#    - NETLIFY_AUTH_TOKEN: Your Netlify personal access token
+#    - NETLIFY_SITE_ID: Your site ID (get from `netlify status`)
+# 4. Push to trigger deployment
+
+name: Deploy to Netlify
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm install -g netlify-cli
+          npm ci --if-present || echo "No dependencies to install"
+
+      - name: Deploy to Netlify (Preview)
+        if: github.event_name == 'pull_request'
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          netlify deploy \
+            --dir=. \
+            --functions=functions \
+            --message="Preview deployment from PR #${{ github.event.number }}"
+
+      - name: Deploy to Netlify (Production)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          netlify deploy \
+            --prod \
+            --dir=. \
+            --functions=functions \
+            --message="Production deployment from commit ${{ github.sha }}"
+
+      - name: Comment PR with preview URL
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🚀 Preview deployment ready! Check Netlify dashboard for URL.'
+            })
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed!"
+            exit 1
+          fi

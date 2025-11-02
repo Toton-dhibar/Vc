@@ -1,0 +1,23 @@
+{
+  "name": "v2ray-netlify-proxy",
+  "version": "1.0.0",
+  "description": "Netlify reverse proxy for V2Ray xhttp traffic",
+  "main": "functions/proxy.js",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "echo 'No build step required'",
+    "deploy": "netlify deploy --prod"
+  },
+  "keywords": [
+    "v2ray",
+    "proxy",
+    "netlify",
+    "xhttp",
+    "reverse-proxy"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "netlify-cli": "^17.0.0"
+  }
+}

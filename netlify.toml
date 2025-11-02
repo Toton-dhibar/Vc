@@ -1,0 +1,19 @@
+[build]
+  functions = "functions"
+  publish = "public"
+
+[functions]
+  # Increase timeout to maximum allowed (26 seconds for free tier, 60 for paid)
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/xhttp/*"
+  to = "/.netlify/functions/proxy"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
