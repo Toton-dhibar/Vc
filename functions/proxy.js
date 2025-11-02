@@ -2,7 +2,10 @@
  * Netlify Function: V2Ray xhttp Reverse Proxy
  * 
  * Forwards all requests from Netlify to the real V2Ray server
- * Target: ra.sdupdates.news/xhttp
+ * Target: 20.192.29.205 (ad.sdupdates.news)/xhttp
+ * 
+ * Using IP address with custom TLS settings to bypass DNS issues
+ * SNI set to domain for proper TLS/SSL certificate validation
  * 
  * This proxy preserves:
  * - HTTP method (GET, POST, etc.)
@@ -11,7 +14,15 @@
  * - Query parameters
  */
 
-const TARGET_SERVER = 'https://ad.sdupdates.news';
+const https = require('https');
+const http = require('http');
+
+// Use IP address to bypass DNS resolution issues from Netlify servers
+const TARGET_IP = '20.192.29.205';
+const TARGET_PORT = 443;
+const TARGET_PROTOCOL = 'https';
+// Domain name for SNI and Host header (required for TLS/SSL certificate validation)
+const TARGET_DOMAIN = 'ad.sdupdates.news';
 
 exports.handler = async (event, context) => {
   try {
@@ -31,30 +42,33 @@ exports.handler = async (event, context) => {
       if (urlMatch) {
         targetPath = '/xhttp' + (urlMatch[1] || '');
       }
+    } else if (event.path && event.path.includes('/xhttp')) {
+      // Fallback: extract from event.path if rawUrl is not available
+      const pathMatch = event.path.match(/\/xhttp(.*)/);
+      if (pathMatch) {
+        targetPath = '/xhttp' + (pathMatch[1] || '');
+      }
     }
     
-    // Build the full target URL
-    const targetUrl = `${TARGET_SERVER}${targetPath}${queryString ? '?' + queryString : ''}`;
+    console.log('Original path:', originalPath);
+    console.log('Target path:', targetPath);
+    console.log('Raw URL:', event.rawUrl);
     
-    console.log(`Proxying ${event.httpMethod} request to: ${targetUrl}`);
+    // Build the full target path with query string
+    const fullPath = targetPath + (queryString ? '?' + queryString : '');
     
     // Prepare headers to forward
     const forwardHeaders = {};
     
     // Copy relevant headers from the incoming request
+    // Note: Exclude WebSocket headers as Netlify Functions don't support WebSocket upgrades
+    // xhttp uses regular HTTP/HTTPS, not WebSockets
     const headersToForward = [
       'accept',
-      'accept-encoding',
       'accept-language',
       'cache-control',
       'content-type',
       'user-agent',
-      'sec-websocket-key',
-      'sec-websocket-version',
-      'sec-websocket-protocol',
-      'sec-websocket-extensions',
-      'upgrade',
-      'connection',
       'x-forwarded-for',
       'x-forwarded-proto',
       'x-real-ip'
@@ -69,45 +83,91 @@ exports.handler = async (event, context) => {
       });
     }
     
-    // Set Host header to target server
-    forwardHeaders['Host'] = 'ra.sdupdates.news';
+    // Remove accept-encoding to avoid compression issues with binary data
+    delete forwardHeaders['accept-encoding'];
     
-    // Prepare fetch options
-    const fetchOptions = {
-      method: event.httpMethod,
-      headers: forwardHeaders,
-    };
+    // Set Host header to the domain name (required for virtual hosting)
+    forwardHeaders['Host'] = TARGET_DOMAIN;
     
-    // Add body for POST, PUT, PATCH requests
-    if (event.body && ['POST', 'PUT', 'PATCH'].includes(event.httpMethod)) {
+    console.log(`Proxying ${event.httpMethod} request to: ${TARGET_PROTOCOL}://${TARGET_IP}:${TARGET_PORT}${fullPath}`);
+    console.log('SNI: ', TARGET_DOMAIN);
+    console.log('Request headers:', JSON.stringify(forwardHeaders, null, 2));
+    
+    // Prepare request body
+    let requestBody = null;
+    if (event.body) {
       if (event.isBase64Encoded) {
-        fetchOptions.body = Buffer.from(event.body, 'base64');
+        requestBody = Buffer.from(event.body, 'base64');
       } else {
-        fetchOptions.body = event.body;
+        requestBody = Buffer.from(event.body);
       }
     }
     
-    // Make the request to the target server
-    const response = await fetch(targetUrl, fetchOptions);
-    
-    // Get response body
-    const responseBody = await response.arrayBuffer();
-    const responseBuffer = Buffer.from(responseBody);
-    
-    // Extract response headers
-    const responseHeaders = {};
-    response.headers.forEach((value, key) => {
-      // Skip headers that shouldn't be forwarded
-      if (!['transfer-encoding', 'connection', 'keep-alive'].includes(key.toLowerCase())) {
-        responseHeaders[key] = value;
+    // Make the HTTPS request with custom options to handle IP + SNI
+    const { statusCode, headers: responseHeaders, body: responseBuffer } = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: TARGET_IP,
+        port: TARGET_PORT,
+        path: fullPath,
+        method: event.httpMethod,
+        headers: forwardHeaders,
+        // Set SNI to domain name for proper TLS certificate validation
+        servername: TARGET_DOMAIN,
+        // Set timeout
+        timeout: 25000,
+      };
+      
+      const client = TARGET_PROTOCOL === 'https' ? https : http;
+      const req = client.request(options, (res) => {
+        const chunks = [];
+        
+        res.on('data', (chunk) => {
+          chunks.push(chunk);
+        });
+        
+        res.on('end', () => {
+          const responseBuffer = Buffer.concat(chunks);
+          
+          // Extract response headers (exclude hop-by-hop headers)
+          const headers = {};
+          Object.keys(res.headers).forEach(key => {
+            if (!['transfer-encoding', 'connection', 'keep-alive'].includes(key.toLowerCase())) {
+              headers[key] = res.headers[key];
+            }
+          });
+          
+          resolve({
+            statusCode: res.statusCode,
+            headers: headers,
+            body: responseBuffer
+          });
+        });
+      });
+      
+      req.on('error', (error) => {
+        reject(error);
+      });
+      
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Request timeout'));
+      });
+      
+      // Send request body if present
+      if (requestBody) {
+        req.write(requestBody);
       }
+      
+      req.end();
     });
     
-    console.log(`Response status: ${response.status}`);
+    console.log(`Response status: ${statusCode}`);
+    console.log('Response headers:', JSON.stringify(responseHeaders, null, 2));
+    console.log('Response body size:', responseBuffer.length);
     
     // Return the proxied response
     return {
-      statusCode: response.status,
+      statusCode: statusCode,
       headers: responseHeaders,
       body: responseBuffer.toString('base64'),
       isBase64Encoded: true
@@ -115,16 +175,22 @@ exports.handler = async (event, context) => {
     
   } catch (error) {
     console.error('Proxy error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      cause: error.cause
+    });
     
     return {
-      statusCode: 500,
+      statusCode: 502,
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         error: 'Proxy error',
         message: error.message,
-        details: 'Failed to forward request to target server'
+        code: error.code || 'UNKNOWN',
+        details: 'Failed to forward request to target server. Check if the target server is accessible.'
       })
     };
   }
