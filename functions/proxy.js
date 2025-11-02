@@ -11,7 +11,7 @@
  * - Query parameters
  */
 
-const TARGET_SERVER = 'https://ra.sdupdates.news';
+const TARGET_SERVER = 'https://ad.sdupdates.news';
 
 exports.handler = async (event, context) => {
   try {
@@ -70,7 +70,7 @@ exports.handler = async (event, context) => {
     }
     
     // Set Host header to target server
-    forwardHeaders['Host'] = 'ra.sdupdates.news';
+    forwardHeaders['Host'] = 'ad.sdupdates.news';
     
     // Prepare fetch options
     const fetchOptions = {
