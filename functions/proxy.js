@@ -11,7 +11,7 @@
  * - Query parameters
  */
 
-const TARGET_SERVER = 'https://ad.sdupdates.news';
+const TARGET_SERVER = 'https://ra.sdupdates.news';
 
 exports.handler = async (event, context) => {
   try {
