@@ -2,7 +2,7 @@
  * Netlify Function: V2Ray xhttp Reverse Proxy
  * 
  * Forwards all requests from Netlify to the real V2Ray server
- * Target: ra.sdupdates.news/xhttp
+ * Target: ad.sdupdates.news/xhttp
  * 
  * This proxy preserves:
  * - HTTP method (GET, POST, etc.)
@@ -115,16 +115,22 @@ exports.handler = async (event, context) => {
     
   } catch (error) {
     console.error('Proxy error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      cause: error.cause
+    });
     
     return {
-      statusCode: 500,
+      statusCode: 502,
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         error: 'Proxy error',
         message: error.message,
-        details: 'Failed to forward request to target server'
+        code: error.code || 'UNKNOWN',
+        details: 'Failed to forward request to target server. Check if the target server is accessible.'
       })
     };
   }
