@@ -2,7 +2,10 @@
  * Netlify Function: V2Ray xhttp Reverse Proxy
  * 
  * Forwards all requests from Netlify to the real V2Ray server
- * Target: ad.sdupdates.news/xhttp
+ * Target: 20.192.29.205 (ad.sdupdates.news)/xhttp
+ * 
+ * Using IP address to bypass DNS resolution issues
+ * Host header set to domain for proper TLS/SSL and server routing
  * 
  * This proxy preserves:
  * - HTTP method (GET, POST, etc.)
@@ -11,7 +14,10 @@
  * - Query parameters
  */
 
-const TARGET_SERVER = 'https://ad.sdupdates.news';
+// Use IP address to bypass DNS resolution issues from Netlify servers
+const TARGET_SERVER = 'https://20.192.29.205';
+// Domain name for Host header (required for TLS/SSL and virtual hosting)
+const TARGET_DOMAIN = 'ad.sdupdates.news';
 
 exports.handler = async (event, context) => {
   try {
@@ -75,8 +81,9 @@ exports.handler = async (event, context) => {
     // Remove accept-encoding to avoid compression issues with binary data
     delete forwardHeaders['accept-encoding'];
     
-    // Set Host header to target server
-    forwardHeaders['Host'] = 'ad.sdupdates.news';
+    // Set Host header to the domain name (required for TLS/SSL handshake and virtual hosting)
+    // Even though we're connecting to IP, the Host header must be the domain name
+    forwardHeaders['Host'] = TARGET_DOMAIN;
     
     console.log(`Proxying ${event.httpMethod} request to: ${targetUrl}`);
     console.log('Request headers:', JSON.stringify(forwardHeaders, null, 2));
